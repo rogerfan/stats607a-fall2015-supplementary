@@ -17,18 +17,19 @@ if __name__ == '__main__':
     filenames = ['assignment_one_kmeans.py',
                  'assignment_one_nearest_neighbor.py',
                  'assignment_one_optimization.py']
+    dataname = "seeds_dataset.txt"
     performance = []
+    eed = random.randint(0, 65535)
     for folder in listdir("hw"):
-        seed = random.randint(0, 65535)
+        random.seed(seed)
         _, _, uniquename = folder.split('_')
         pathname = "hw/assignment_one_{0}/".format(uniquename)
-        dataname = "seeds_dataset.txt"
         copyfile("datasets/{0}".format(dataname), pathname + dataname)
         t = [float('inf')] * 3
         pep8_pass = True
         chdir(pathname)
+
         for i, task in enumerate(filenames):
-            random.seed(seed)
             try:
                 script = "exec(open('{0}').read())".format(task)
                 t[i] = median([timeit(script, number=1) for _ in range(10)])
