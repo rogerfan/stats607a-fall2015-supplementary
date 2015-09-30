@@ -38,12 +38,12 @@ if __name__ == '__main__':
                     except:
                         pass
                     
-                with open('{0}/{1}'.format(pathname, file)) as script:
-                    for line in script:
-                        for package in banned:
-                            if package in line:
-                                comment.append('banned')
-                            
+                    with open('{0}/{1}'.format(pathname, file)) as script:
+                        for line in script:
+                            for package in banned:
+                                if package in line:
+                                    comment.append('banned')
+                                
                     
         for s in suppl: copyfile("suppl/{0}".format(s), pathname + s)
 
