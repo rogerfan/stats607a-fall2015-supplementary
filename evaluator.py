@@ -24,7 +24,7 @@ if __name__ == '__main__':
     banned = ['numpy', 'scipy', 'sklearn', 'cvxopt']
     
     performance = []
-    seed = random.randint(0, 65535)
+    seed = 623
     for folder in listdir("hw1"):
         _, _, uniquename = folder.split('_')
         pathname = "hw1/assignment_one_{0}/".format(uniquename)
@@ -79,4 +79,5 @@ if __name__ == '__main__':
 
     with open("evaluation.txt", "w") as output:
         for student in performance:
-            output.write("{0} {1}\n".format(student))
+            output.write(student)
+            output.write('\n')
