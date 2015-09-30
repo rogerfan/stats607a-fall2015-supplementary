@@ -6,7 +6,7 @@
 
 # Lazy GSI and his sloppy grader
 
-from os import chdir, listdir, remove, walk
+from os import listdir, remove, walk
 from shutil import copy
 from timeit import timeit
 from numpy import median
@@ -16,19 +16,17 @@ import random
 
 from sloppy_grader import sloppy_grader
 
-
 def pep8_report(report):
     exceptions = ["do not assign a lambda expression, use a def"]
     for line in report.split('\n'):
         for message in exceptions:
             if len(line) and line[-len(message):] != message:
-                print(line)
                 return 0
     return 1
 
 if __name__ == '__main__':
     task_check = True
-    time_check = False
+    time_check = True
     pep8_check = True
 
     n_rep = 1
@@ -45,11 +43,12 @@ if __name__ == '__main__':
     seed = 623
 
     for s in suppl:
-        copy("suppl/{0}".format(s), 'test_scripts/')
-        copy("suppl/{0}".format(s), 'hw1_sol/')
-
+        copy("suppl/{0}".format(s), './')
+        copy("suppl/{0}".format(s), './test_scripts/')
+        
     for folder in listdir("hw1"):
         _, _, uniquename = folder.split('_')
+        print("==== Grading: {0} ====".format(uniquename))
         pathname = "hw1/assignment_one_{0}/".format(uniquename)
         comment = []
 
@@ -58,10 +57,10 @@ if __name__ == '__main__':
             for file in files:
                 if file[:-3] in tasks:
                     try:
-                        copy('{0}/{1}'.format(p, file),
-                             'test_scripts/{0}'.format(file))
+                        copy("{0}/{1}".format(p, file),
+                             "test_scripts/{0}".format(file))
 
-                        with open('test_scripts/{0}'.format(file)) as script:
+                        with open("test_scripts/{0}".format(file)) as script:
                             for line in script:
                                 for package in banned:
                                     if package in line:
@@ -72,13 +71,12 @@ if __name__ == '__main__':
         # Variables for storing results
         running_time = []
         pep8_passed = []
-        chdir('test_scripts')
         results = sloppy_grader() if task_check else [[], [], []]
         random.seed(seed)
         for i, task in enumerate(tasks):
 
             if time_check and False not in results[i]:
-                script = "call(['python', '{0}.py'])".format(task)
+                script = "call(['python', 'test_scripts/{0}.py'])".format(task)
                 try:
                     t = [timeit(script, number=1,
                                 setup='from subprocess import call')
@@ -94,21 +92,25 @@ if __name__ == '__main__':
 
             if pep8_check:
                 pep8_passed.append(pep8_report(Popen(["pep8",
-                                                      "{0}.py".format(task)],
+                                                      "test_scripts/{0}.py".format(task)],
                                                stdout=PIPE).communicate()[0]))
-        for file in listdir('./'):
-            if file[-3:] in ['.py', 'pyc']:
-                remove(file)
 
-        chdir("..")
+        for file in tasks:
+            remove("test_scripts/{0}.py".format(file))
+            remove("test_scripts/{0}.pyc".format(file))
 
         performance.append((uniquename,
                             ' '.join(map(str, running_time)),
                             ' '.join(map(str, pep8_passed)),
-                            ' '.join(map(str, results)),
+                            ' '.join(map(str, results[0])), 
+                            ' '.join(map(str, results[1])), 
+                            ' '.join(map(str, results[2])), 
                             ';'.join(comment)))
 
-    with open("evaluation.txt", "w") as output:
+    for s in listdir('test_scripts/'):
+        remove("test_scripts/{0}".format(s))
+
+    with open("evaluation.csv", "w") as output:
         for student in performance:
-            output.write(' '.join(student))
+            output.write(','.join(student))
             output.write('\n')
