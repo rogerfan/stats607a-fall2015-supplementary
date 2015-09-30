@@ -11,10 +11,10 @@ from shutil import copy
 from timeit import timeit
 from numpy import median
 from subprocess import Popen, PIPE
-
 import random
 
 from sloppy_grader import sloppy_grader
+
 
 def pep8_report(report):
     exceptions = ["do not assign a lambda expression, use a def"]
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     for s in suppl:
         copy("suppl/{0}".format(s), './')
         copy("suppl/{0}".format(s), './test_scripts/')
-        
+
     for folder in listdir("hw1"):
         _, _, uniquename = folder.split('_')
         print("==== Grading: {0} ====".format(uniquename))
@@ -74,9 +74,9 @@ if __name__ == '__main__':
         results = sloppy_grader() if task_check else [[], [], []]
         random.seed(seed)
         for i, task in enumerate(tasks):
-
+            filename = "test_scripts/{0}.py".format(task)
             if time_check and False not in results[i]:
-                script = "call(['python', 'test_scripts/{0}.py'])".format(task)
+                script = "call(['python', {0}'])".format(filename)
                 try:
                     t = [timeit(script, number=1,
                                 setup='from subprocess import call')
@@ -91,8 +91,7 @@ if __name__ == '__main__':
                 print("{0}, {1}: Skipped".format(uniquename, task))
 
             if pep8_check:
-                pep8_passed.append(pep8_report(Popen(["pep8",
-                                                      "test_scripts/{0}.py".format(task)],
+                pep8_passed.append(pep8_report(Popen(["pep8", filename],
                                                stdout=PIPE).communicate()[0]))
 
         for file in tasks:
@@ -102,9 +101,9 @@ if __name__ == '__main__':
         performance.append((uniquename,
                             ' '.join(map(str, running_time)),
                             ' '.join(map(str, pep8_passed)),
-                            ' '.join(map(str, results[0])), 
-                            ' '.join(map(str, results[1])), 
-                            ' '.join(map(str, results[2])), 
+                            ' '.join(map(str, results[0])),
+                            ' '.join(map(str, results[1])),
+                            ' '.join(map(str, results[2])),
                             ';'.join(comment)))
 
     for s in listdir('test_scripts/'):
