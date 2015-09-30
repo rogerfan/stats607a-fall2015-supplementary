@@ -20,7 +20,9 @@ if __name__ == '__main__':
     filenames = ['assignment_one_kmeans.py',
                  'assignment_one_nearest_neighbor.py',
                  'assignment_one_optimization.py']
-    suppl = ['seeds_dataset.txt', 'seeds_dataset_shuffled.txt', 'losses.py']
+    suppl = ['seeds_dataset.txt', 
+             'seeds_dataset_shuffled.txt', 
+             'losses.py']
     banned = ['numpy', 'scipy', 'sklearn', 'cvxopt']
     
     performance = []
@@ -49,12 +51,12 @@ if __name__ == '__main__':
 
         # Variables for storing results        
         running_time = []        
-        results = [] #task_checker(pathname)
+        results = [[], [], []] #task_checker(pathname)
         
         chdir(pathname)        
         random.seed(seed)
-        if all(results):
-            for i, task in enumerate(filenames):
+        for i, task in enumerate(filenames):
+            if all(results[i]):    
                 script = "call(['python', '{0}'])".format(task)
                 try: 
                     t = [timeit(script, number=1, 
@@ -75,9 +77,9 @@ if __name__ == '__main__':
                             ' '.join(map(str, running_time)), 
                             ' '.join(map(str, pep8_failed)), 
                             ' '.join(map(str, results)),
-                            ' '.join(comment)))
+                            ';'.join(comment)))
 
     with open("evaluation.txt", "w") as output:
         for student in performance:
-            output.write(student)
+            output.write(' '.join(student))
             output.write('\n')
