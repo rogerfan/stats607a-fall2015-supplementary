@@ -11,46 +11,68 @@ from os import listdir, remove, walk
 from shutil import copy
 from subprocess import Popen, PIPE
 from timeit import timeit
+import signal
 import random
 import re
 
 from sloppy_grader import sloppy_grader
 
 
-def file_finder(pathname, comments):
+def file_examiner(pathname, comments):
+    """ Find scripts and move them to ./test_scripts/; check modules. """
 
+    found_it = [False, False, False]
     for p, _, files in walk(pathname):
         for file in files:
             if file[:-3] in tasks:
-                try:
-                    copy("{0}/{1}".format(p, file),
-                         "test_scripts/{0}".format(file))
-                    with open("test_scripts/{0}".format(file)) as script:
-                        for line in script:
+                found_it[tasks.index(file[:-3])] = True
+                copy("{0}/{1}".format(p, file),
+                     "test_scripts/{0}".format(file))
+                with open("test_scripts/{0}".format(file)) as script:
+                    for line in script:
+                        if line.lstrip()[:6] == 'import':
                             for package in banned:
                                 if package in line:
                                     comments.append('banned')
-                except:
-                    comments.append('not_found')
+    return found_it
 
 
+def timeout(func):
+    """ Each function call has to be done within 60 seconds. """
+
+    def _handler(signum, frame):
+        print 'Timeout'
+        raise Exception('Timeout')
+
+    def func_with_timeout(*args, **kwargs):
+        handler = signal.signal(signal.SIGALRM, _handler)
+        signal.alarm(60)
+        output = func(*args, **kwargs)
+        signal.signal(signal.SIGALRM, handler)
+        signal.alarm(0)
+        return output
+
+    func_with_timeout.__name__ = func.__name__
+    return func_with_timeout
+
+
+@timeout
 def timer(filename, uniquename, task, n_rep):
+    """ Get median of running time of main(). """
 
     script = """with open(os.devnull, 'w') as DEVNULL:
-                call(['python', '{0}'],
-                     stdout=DEVNULL)""".format(filename)
+                call(['python', '{0}'], stdout=DEVNULL)""".format(filename)
     try:
         t = [timeit(script, number=1,
                     setup='from subprocess import call; import os')
              for _ in range(n_rep)]
-        print("Time {0}, {1}: Evaluated".format(uniquename, task))
         return median(t)
     except:
-        print("Time {0}, {1}: Failed".format(uniquename, task))
         return float('inf')
 
 
 def pep8_report(report, exceptions):
+    """ Do pep8 check but ignore excpetions. """
 
     for line in report.split('\n'):
         for message in exceptions:
@@ -59,7 +81,8 @@ def pep8_report(report, exceptions):
     return 1
 
 
-def line_counter(path, sol=False):
+def line_counter(path, found_it, sol=False):
+    """ There must be something wrong if you wrote terribly long codes. """
 
     lines = {}
     for i, task in enumerate(tasks):
@@ -67,21 +90,30 @@ def line_counter(path, sol=False):
         for method in scores[task]:
             lines[method] = 0
         method = ''
-        with open(filename, 'r') as script:
-            for line in script:
-                match = re.search('def (.*)\(', line)
-                if match:
-                    method = match.group(1)
-                if method in scores[task]:
-                    lines[method] += line.lstrip(' ')[0] not in ['\n', '#']
-
+        if found_it[i]:
+            with open(filename, 'r') as script:
+                in_string = False
+                for line in script:
+                    match = re.search('def (.*)\(', line)
+                    if match:
+                        method = match.group(1)
+                    if method in scores[task]:
+                        s = len(re.findall('"""', line))
+                        if s == 1:
+                            in_string = not in_string
+                        if s > 0:
+                            continue
+                        if line.lstrip(' ')[0] not in ['\n', '#']:
+                            if not in_string:
+                                lines[method] += 1
+        elif method:
+            lines[method] = 65535
     return lines
 
 if __name__ == '__main__':
     time_check = True
-    pep8_check = True
-
-    n_rep = 5
+    n_rep = 1
+    seed = 623
 
     tasks = ['assignment_one_kmeans',
              'assignment_one_optimization',
@@ -108,18 +140,16 @@ if __name__ == '__main__':
                'classification_error': 1}}
 
     pep8_exceptions = ["do not assign a lambda expression, use a def"]
-
     methods = [method for task in scores for method in scores[task]]
-    banned = ['numpy', 'scipy', 'sklearn', 'cvxopt']
-    line_sol = line_counter('hw1_sol', True)
+    banned = ['numpy', 'scipy', 'sklearn', 'cvxopt', 'itertools',
+              'multiprocesses']
+    line_sol = line_counter('hw1_sol', [True] * 3, True)
+    performance = [', '.join(('uniquename, time_1, time_2, time_3',
+                              'pep8_1, pep8_2, pep8_3',
+                              ', '.join(methods), 'comments'))]
 
-    performance = [('uniquename', 'time_1, time_2, time_3',
-                    'pep8_1, pep8_2, pep8_3',
-                    ', '.join(methods), 'comments')]
-    seed = 623
     for s in suppl:
-        copy("suppl/{0}".format(s), './')
-        copy("suppl/{0}".format(s), './test_scripts/')
+        copy("suppl/hw1/{0}".format(s), './')
 
     for folder in listdir("hw1"):
         _, _, uniquename = folder.split('_')
@@ -127,38 +157,51 @@ if __name__ == '__main__':
         pathname = "hw1/assignment_one_{0}/".format(uniquename)
         comments = []
 
-        # Find scripts and move them to ./test_scripts/, check modules
-        file_finder(pathname, comments)
+        # Prepare files
+        for s in suppl:
+            copy("suppl/hw1/{0}".format(s), './test_scripts/')
+
+        found_it = file_examiner(pathname, comments)
 
         # Check #lines
-        for method, k in line_counter('test_scripts').items():
+        for method, k in line_counter('test_scripts', found_it).items():
             if abs(line_sol[method] - k) > 2:
                 comments.append('#line_{0}'.format(method))
 
         # Variables for storing results
         running_time = []
         pep8_passed = []
-        results = sloppy_grader(scores)
+
+        # Sloppy grader grades your homework
+        # but doesn't want you know what's going on.
+        results = sloppy_grader(scores, timeout)
 
         random.seed(seed)
         for i, task in enumerate(tasks):
             filename = "test_scripts/{0}.py".format(task)
             # Running time
-            if time_check and all(results[m] for m in scores[task]):
-                running_time.append(timer(filename, uniquename, task, n_rep))
+            if (time_check and found_it[i] and
+               all(results[m] for m in scores[task])):
+                try:
+                    running_time.append(timer(filename, uniquename,
+                                              task, n_rep))
+                    state = 'Evaluated'
+                except:
+                    running_time.append(float('inf'))
+                    state = 'Failed'
             else:
                 running_time.append(float('inf'))
-                print("Time {0}, {1}: Skipped".format(uniquename, task))
+                state = 'Skipped'
+            print("Time {0}, {1}: {2}".format(uniquename, task, state))
+
             # pep8 check
-            if pep8_check:
-                pep8_passed.append(pep8_report(Popen(["pep8", filename],
-                                               stdout=PIPE).communicate()[0],
-                                               pep8_exceptions))
+            pep8_passed.append(pep8_report(Popen(["pep8", filename],
+                                           stdout=PIPE).communicate()[0],
+                                           pep8_exceptions))
 
         # Cleanups
-        for file in tasks:
-            remove("test_scripts/{0}.py".format(file))
-            remove("test_scripts/{0}.pyc".format(file))
+        for file in listdir('test_scripts'):
+            remove("test_scripts/{0}".format(file))
 
         performance.append(', '.join((uniquename,
                                       ', '.join(map(str, running_time)),
@@ -171,8 +214,6 @@ if __name__ == '__main__':
     # Final cleanups
     for s in suppl:
         remove("{0}".format(s))
-    for s in listdir('test_scripts'):
-        remove("test_scripts/{0}".format(s))
 
     with open("evaluation.csv", "w") as output:
         for student in performance:
