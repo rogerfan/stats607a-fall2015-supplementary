@@ -8,6 +8,7 @@
 
 from numpy import median
 from os import listdir, remove, walk
+from os.path import isdir
 from shutil import copy
 from subprocess import Popen, PIPE
 from timeit import timeit
@@ -18,27 +19,48 @@ import re
 from sloppy_grader import sloppy_grader
 
 
-def file_examiner(pathname, comments):
+def file_checker(pathname, comments, tasks, modules):
     """ Find scripts and move them to ./test_scripts/; check modules. """
 
-    found_it = [False, False, False]
+    def module_check(comments, script, modules):
+        buffer = ''
+        pkgs = []
+        for line in script:
+            if line[-2:] == '\\\n':
+                buffer += line[:-2]
+                continue
+            else:
+                buffer += line
+                match = re.search('from (.*) import', buffer)
+                if match:
+                    if match.group(1) not in modules:
+                        pkgs.append(match.group(1))
+                else:
+                    match = re.search('import (.*)', buffer)
+                    if match:
+                        pkgs.extend(map(lambda s: s.strip(),
+                                    match.group(1).split(',')))
+                buffer = ''
+
+        comments.extend(["banned_{0}".format(pkg) for pkg in pkgs
+                         if pkg not in modules])
+
+    found_it = dict.fromkeys(tasks, False)
     for p, _, files in walk(pathname):
         for file in files:
-            if file[:-3] in tasks:
-                found_it[tasks.index(file[:-3])] = True
+            task = file[:-3]
+            if task in tasks:
+                found_it[task] = True
                 copy("{0}/{1}".format(p, file),
                      "test_scripts/{0}".format(file))
                 with open("test_scripts/{0}".format(file)) as script:
-                    for line in script:
-                        if line.lstrip()[:6] == 'import':
-                            for package in banned:
-                                if package in line:
-                                    comments.append('banned')
+                    module_check(comments, script, modules[task])
+
     return found_it
 
 
 def timeout(func):
-    """ Each function call has to be done within 60 seconds. """
+    """ Decorator: Each function call has to be done within 60 seconds. """
 
     def _handler(signum, frame):
         print 'Timeout'
@@ -56,6 +78,63 @@ def timeout(func):
     return func_with_timeout
 
 
+def line_counter(path, found_it, sol=False):
+    """ There must be something wrong if you wrote terribly long codes. """
+
+    def counter(script, nlines):
+        in_string = False
+        method = None
+        for line in script:
+            if line[:4] == 'def ':
+                match = re.search('def (.*)\(', line)
+                if match and match.group(1) in scores[task]:
+                    if match.group(1) in scores[task]:
+                        method = match.group(1)
+                        nlines[method] = 0
+                    else:
+                        method = None
+                elif line[0] not in ['\s', '\t']:
+                    method = None
+
+            if method:
+                # Remove Documents
+                s = len(re.findall('"""', line))
+                if line.lstrip()[:3] == '"""':
+                    if s % 2:
+                        in_string = not in_string
+                if in_string:
+                    in_string = len(re.findall('"""', line)) % 2 == 1
+
+                # Remove blank lines and comments
+                if line.lstrip(' ')[0] not in ['\n', '#']:
+                    if not in_string:
+                        nlines[method] += 1
+
+    nlines = {}
+    for i, task in enumerate(tasks):
+        filename = '{0}/{1}{2}.py'.format(path, task, '_sol' if sol else '')
+        for method in scores[task]:
+            nlines[method] = 0
+        method = None
+        if found_it[task]:
+            with open(filename, 'r') as script:
+                counter(script, nlines)
+        else:
+            for method in scores[task]:
+                nlines[method] = 65535
+    return nlines
+
+
+def pep8_report(report, exceptions):
+    """ Do pep8 check but ignore excpetions. """
+
+    for line in report.split('\n'):
+        for message in exceptions:
+            if len(line) and line[-len(message):] != message:
+                return 0
+    return 1
+
+
 @timeout
 def timer(filename, uniquename, task, n_rep):
     """ Get median of running time of main(). """
@@ -70,45 +149,6 @@ def timer(filename, uniquename, task, n_rep):
     except:
         return float('inf')
 
-
-def pep8_report(report, exceptions):
-    """ Do pep8 check but ignore excpetions. """
-
-    for line in report.split('\n'):
-        for message in exceptions:
-            if len(line) and line[-len(message):] != message:
-                return 0
-    return 1
-
-
-def line_counter(path, found_it, sol=False):
-    """ There must be something wrong if you wrote terribly long codes. """
-
-    lines = {}
-    for i, task in enumerate(tasks):
-        filename = '{0}/{1}{2}.py'.format(path, task, '_sol' if sol else '')
-        for method in scores[task]:
-            lines[method] = 0
-        method = ''
-        if found_it[i]:
-            with open(filename, 'r') as script:
-                in_string = False
-                for line in script:
-                    match = re.search('def (.*)\(', line)
-                    if match:
-                        method = match.group(1)
-                    if method in scores[task]:
-                        s = len(re.findall('"""', line))
-                        if s == 1:
-                            in_string = not in_string
-                        if s > 0:
-                            continue
-                        if line.lstrip(' ')[0] not in ['\n', '#']:
-                            if not in_string:
-                                lines[method] += 1
-        elif method:
-            lines[method] = 65535
-    return lines
 
 if __name__ == '__main__':
     time_check = True
@@ -141,19 +181,32 @@ if __name__ == '__main__':
 
     pep8_exceptions = ["do not assign a lambda expression, use a def"]
     methods = [method for task in scores for method in scores[task]]
-    banned = ['numpy', 'scipy', 'sklearn', 'cvxopt', 'itertools',
-              'multiprocesses']
-    line_sol = line_counter('hw1_sol', [True] * 3, True)
+    modules = {tasks[0]: set(['random', 'time']),
+               tasks[1]: set(['math', 'random', 'time', 'losses']),
+               tasks[2]: set(['math', 'random', 'assignment_one_kmeans'])}
+    line_sol = line_counter('hw1_sol', dict.fromkeys(tasks, True), True)
     performance = [', '.join(('uniquename, time_1, time_2, time_3',
                               'pep8_1, pep8_2, pep8_3',
                               ', '.join(methods), 'comments'))]
+    evaluated = set()
+    try:
+        with open('evaluation.csv') as students:
+            students.readline()
+            for student in students:
+                evaluated.add(student.split(',')[0])
+    except:
+        pass
 
     for s in suppl:
         copy("suppl/hw1/{0}".format(s), './')
 
-    for folder in listdir("hw1"):
+    for folder in (i for i in listdir('hw1') if isdir("hw1/{0}".format(i))):
         _, _, uniquename = folder.split('_')
-        print("{1} Grading: {0} {1}".format(uniquename, '=' * 30))
+        if uniquename in evaluated:
+            print "Found {0} in evaluation.csv".format(uniquename)
+            continue
+
+        print "{1} Grading: {0} {1}".format(uniquename, '=' * 30)
         pathname = "hw1/assignment_one_{0}/".format(uniquename)
         comments = []
 
@@ -161,7 +214,7 @@ if __name__ == '__main__':
         for s in suppl:
             copy("suppl/hw1/{0}".format(s), './test_scripts/')
 
-        found_it = file_examiner(pathname, comments)
+        found_it = file_checker(pathname, comments, tasks, modules)
 
         # Check #lines
         for method, k in line_counter('test_scripts', found_it).items():
@@ -172,15 +225,15 @@ if __name__ == '__main__':
         running_time = []
         pep8_passed = []
 
-        # Sloppy grader grades your homework
+        # Sloppy grader is grading your homework
         # but doesn't want you know what's going on.
-        results = sloppy_grader(scores, timeout)
+        results = sloppy_grader(scores, found_it, timeout)
 
         random.seed(seed)
         for i, task in enumerate(tasks):
             filename = "test_scripts/{0}.py".format(task)
             # Running time
-            if (time_check and found_it[i] and
+            if (time_check and found_it[task] and
                all(results[m] for m in scores[task])):
                 try:
                     running_time.append(timer(filename, uniquename,
@@ -192,7 +245,7 @@ if __name__ == '__main__':
             else:
                 running_time.append(float('inf'))
                 state = 'Skipped'
-            print("Time {0}, {1}: {2}".format(uniquename, task, state))
+            print "Time {0}, {1}: {2}".format(uniquename, task, state)
 
             # pep8 check
             pep8_passed.append(pep8_report(Popen(["pep8", filename],
