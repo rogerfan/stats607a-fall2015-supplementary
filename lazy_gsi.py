@@ -46,24 +46,30 @@ def file_checker(pathname, comments, tasks, modules):
         comments.extend(["banned_{0}".format(pkg) for pkg in pkgs
                          if pkg not in modules])
 
-    with zipfile.ZipFile(pathname, 'r') as z:
-        z.extractall('tmp')
     found_it = dict.fromkeys(tasks, False)
-    for p, _, files in walk('tmp'):
-        for file in files:
-            task = file[:-3]
-            if task in tasks:
-                found_it[task] = True
-                copy("{0}/{1}".format(p, file),
-                     "test_scripts/{0}".format(file))
-                with open("test_scripts/{0}".format(file)) as script:
-                    module_check(comments, script, modules[task])
-    rmtree('tmp')
+    try:
+        with zipfile.ZipFile(pathname, 'r') as z:
+            z.extractall('tmp')
+        for p, _, files in walk('tmp'):
+            for file in files:
+                task = file[:-3]
+                if task in tasks:
+                    found_it[task] = True
+                    copy("{0}/{1}".format(p, file),
+                         "test_scripts/{0}".format(file))
+                    with open("test_scripts/{0}".format(file)) as script:
+                        module_check(comments, script, modules[task])
+        rmtree('tmp')
+    except:
+        print "Can't uncompress {0}. Unknown format.".format(pathname)
+        copy(pathname, 'unknown/{0}'.format(pathname.split('/')[-1]))    
+        comments.append('unknown_format')
+
     return found_it
 
 
 def timeout(func):
-    """ Decorator: Each function call has to be done within 60 seconds. """
+    """ Decorator: Each function call has to be done within 300 seconds. """
 
     def _handler(signum, frame):
         print 'Timeout'
@@ -71,7 +77,7 @@ def timeout(func):
 
     def func_with_timeout(*args, **kwargs):
         handler = signal.signal(signal.SIGALRM, _handler)
-        signal.alarm(60)
+        signal.alarm(300)
         output = func(*args, **kwargs)
         signal.signal(signal.SIGALRM, handler)
         signal.alarm(0)
@@ -138,24 +144,24 @@ def pep8_report(report, exceptions):
     return 1
 
 
-@timeout
 def timer(filename, uniquename, task, n_rep):
     """ Get median of running time of main(). """
 
+    @timeout
+    def subtimer(script):
+        try:
+            return timeit(script, number=1, setup='from subprocess import call; import os')
+        except:
+            return float('inf')
+
     script = """with open(os.devnull, 'w') as DEVNULL:
                 call(['python', '{0}'], stdout=DEVNULL)""".format(filename)
-    try:
-        t = [timeit(script, number=1,
-                    setup='from subprocess import call; import os')
-             for _ in range(n_rep)]
-        return median(t)
-    except:
-        return float('inf')
+    return median([subtimer(script) for _ in range(n_rep)])
 
 
 if __name__ == '__main__':
     time_check = True
-    n_rep = 1
+    n_rep = 3
     seed = 623
 
     tasks = ['assignment_one_kmeans',
