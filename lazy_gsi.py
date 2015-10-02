@@ -9,12 +9,13 @@
 from numpy import median
 from os import listdir, remove, walk
 from os.path import isdir
-from shutil import copy
+from shutil import copy, rmtree
 from subprocess import Popen, PIPE
 from timeit import timeit
 import signal
 import random
 import re
+import zipfile
 
 from sloppy_grader import sloppy_grader
 
@@ -45,8 +46,10 @@ def file_checker(pathname, comments, tasks, modules):
         comments.extend(["banned_{0}".format(pkg) for pkg in pkgs
                          if pkg not in modules])
 
+    with zipfile.ZipFile(pathname, 'r') as z:
+        z.extractall('tmp')
     found_it = dict.fromkeys(tasks, False)
-    for p, _, files in walk(pathname):
+    for p, _, files in walk('tmp'):
         for file in files:
             task = file[:-3]
             if task in tasks:
@@ -55,7 +58,7 @@ def file_checker(pathname, comments, tasks, modules):
                      "test_scripts/{0}".format(file))
                 with open("test_scripts/{0}".format(file)) as script:
                     module_check(comments, script, modules[task])
-
+    rmtree('tmp')
     return found_it
 
 
@@ -200,14 +203,15 @@ if __name__ == '__main__':
     for s in suppl:
         copy("suppl/hw1/{0}".format(s), './')
 
-    for folder in (i for i in listdir('hw1') if isdir("hw1/{0}".format(i))):
-        _, _, uniquename = folder.split('_')
+    for raw in (i for i in listdir('hw1') if i.endswith('.zip')):
+        uniquename = raw.split('_.')[-1].split('.')[0]
+        
         if uniquename in evaluated:
             print "Found {0} in evaluation.csv".format(uniquename)
             continue
 
         print "{1} Grading: {0} {1}".format(uniquename, '=' * 30)
-        pathname = "hw1/assignment_one_{0}/".format(uniquename)
+        pathname = "hw1/{0}".format(raw)
         comments = []
 
         # Prepare files
