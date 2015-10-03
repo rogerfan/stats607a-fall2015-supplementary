@@ -293,12 +293,12 @@ if __name__ == '__main__':
         for file in listdir('test_scripts'):
             remove("test_scripts/{0}".format(file))
 
-        performance.append(', '.join((uniquename,
-                                      ', '.join(map(str, running_time)),
-                                      ', '.join(map(str, pep8_passed)),
-                                      ', '.join(map(str, [results[m]
-                                                          for m in methods])),
-                                      '0', ';'.join(comments))))
+        performance.append(','.join((uniquename,
+                                     ','.join(map(str, running_time)),
+                                     ','.join(map(str, pep8_passed)),
+                                     ','.join(map(str, [results[m]
+                                                         for m in methods])),
+                                     '0', ';'.join(comments))))
         print performance[-1]
 
     # Final cleanups
