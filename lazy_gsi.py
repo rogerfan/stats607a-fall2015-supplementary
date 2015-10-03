@@ -51,10 +51,11 @@ def file_checker(root, filename, comments, tasks, modules):
                                     match.group(1).split(',')))
                 buffer = ''
 
-        comments.extend(["banned_{0}".format(pkg) for pkg in pkgs
+        comments.extend(["#module_{0}".format(pkg) for pkg in pkgs
                          if pkg not in modules])
 
     found = False
+    found_invalid = False
     for path, _, files in walk(root):
         for file in files:
             if file == filename:
@@ -67,15 +68,20 @@ def file_checker(root, filename, comments, tasks, modules):
                 except:
                     print "Can't uncompress {0}.".format(file)
                     copy(pathname, 'unknown_format')
-                    comments.append('unknown_format')
+                    comments.append('#failed_to_uncompress')
+                    found_invalid = True
         if found:
             break
+    if not found and not found_invalid:
+        comments.append('#zip_not_found')
+        
 
     found_it = dict.fromkeys(tasks, False)
     for path, _, files in walk(root):
         for file in files:
             task = file[:-3]
             if task in tasks:
+                
                 found_it[task] = True
                 copy("{0}/{1}".format(path, file),
                      "test_scripts/{0}".format(file))
@@ -83,25 +89,25 @@ def file_checker(root, filename, comments, tasks, modules):
                     module_check(comments, script, modules[task])
     return found_it
 
-
-def timeout(func):
-    """ Decorator: Each function call has to be done within 300 seconds. """
-
-    def _handler(signum, frame):
-        print 'Timeout'
-        raise Exception('Timeout')
-
-    def func_with_timeout(*args, **kwargs):
-        handler = signal.signal(signal.SIGALRM, _handler)
-        signal.alarm(300)
-        output = func(*args, **kwargs)
-        signal.signal(signal.SIGALRM, handler)
-        signal.alarm(0)
-        return output
-
-    func_with_timeout.__name__ = func.__name__
-    return func_with_timeout
-
+def timeout(limit):
+    def wrap(func):
+        """ Decorator: Each function call has to be done within time limit. """
+    
+        def _handler(signum, frame):
+            print 'Timeout'
+            raise Exception('Timeout')
+    
+        def func_with_timeout(*args, **kwargs):
+            handler = signal.signal(signal.SIGALRM, _handler)
+            signal.alarm(limit)
+            output = func(*args, **kwargs)
+            signal.signal(signal.SIGALRM, handler)
+            signal.alarm(0)
+            return output
+    
+        func_with_timeout.__name__ = func.__name__
+        return func_with_timeout
+    return wrap
 
 def line_counter(path, found_it, sol=False):
     """ There must be something wrong if you wrote terribly long codes. """
@@ -163,7 +169,7 @@ def pep8_report(report, exceptions):
 def timer(filename, uniquename, task, n_rep):
     """ Get median of running time of main(). """
 
-    @timeout
+    @timeout(300)
     def subtimer(script):
         try:
             return timeit(script, number=1,
@@ -178,7 +184,7 @@ def timer(filename, uniquename, task, n_rep):
 
 if __name__ == '__main__':
     time_check = True
-    n_rep = 3
+    n_rep = 1
     seed = 623
 
     tasks = ['assignment_one_kmeans',
@@ -211,9 +217,9 @@ if __name__ == '__main__':
                tasks[1]: set(['math', 'random', 'time', 'losses']),
                tasks[2]: set(['math', 'random', 'assignment_one_kmeans'])}
     line_sol = line_counter('hw1_sol', dict.fromkeys(tasks, True), True)
-    performance = [', '.join(('uniquename, time_1, time_2, time_3',
-                              'pep8_1, pep8_2, pep8_3',
-                              ', '.join(methods), 'pdf', 'comments'))]
+    records = [','.join(('uniquename', 'name', 'time_1,time_2,time_3',
+                         'pep8_1,pep8_2,pep8_3',
+                         ','.join(methods), 'comments'))]
     evaluated = set()
     for folder in ['output', 'unknown_format', 'test_scripts']:
         if not isdir(folder):
@@ -232,17 +238,18 @@ if __name__ == '__main__':
         copy("suppl/hw1/{0}".format(s), './')
 
     for folder in listdir('hw1'):
-        match = re.search('\((.*)\)', folder)
+        match = re.search('(.*), (.*)\((.*)\)', folder)
         if match:
-            uniquename = match.group(1)
+            uniquename = match.group(3)
+            name = "{0} {1}".format(match.group(2), match.group(1))
         else:
             continue
 
         if uniquename in evaluated:
-            print "Found {0} in evaluation.csv".format(uniquename)
+            print "Found {0} in evaluation.csv".format(folder)
             continue
 
-        print "{1} Grading: {0} {1}".format(uniquename, '=' * 30)
+        print "{1} Grading: {0} {1}".format(folder, '=' * 30)
         comments = []
 
         # Prepare files
@@ -255,7 +262,7 @@ if __name__ == '__main__':
 
         # Check #lines
         for method, k in line_counter('test_scripts', found_it).items():
-            if float('inf') > abs(line_sol[method] - k) > 2:
+            if float('inf') > abs(line_sol[method] - k) > 3:
                 comments.append('#line_{0}'.format(method))
 
         # Variables for storing results
@@ -264,7 +271,7 @@ if __name__ == '__main__':
 
         # Sloppy grader is grading your homework
         # but doesn't want you know what's going on.
-        results = sloppy_grader(scores, found_it, timeout)
+        results = sloppy_grader(scores, found_it, comments, timeout(30))
 
         random.seed(seed)
         for i, task in enumerate(tasks):
@@ -293,13 +300,13 @@ if __name__ == '__main__':
         for file in listdir('test_scripts'):
             remove("test_scripts/{0}".format(file))
 
-        performance.append(','.join((uniquename,
-                                     ','.join(map(str, running_time)),
-                                     ','.join(map(str, pep8_passed)),
-                                     ','.join(map(str, [results[m]
-                                                         for m in methods])),
-                                     '0', ';'.join(comments))))
-        print performance[-1]
+        records.append(','.join((uniquename, name,
+                                 ','.join(map(str, running_time)),
+                                 ','.join(map(str, pep8_passed)),
+                                 ','.join(map(str, [results[m]
+                                                    for m in methods])),
+                                 ';'.join(comments))))
+        print records[-1]
 
     # Final cleanups
     for s in suppl:
@@ -307,6 +314,6 @@ if __name__ == '__main__':
     existing_report = isfile('output/evaluation.csv')
     with open("output/evaluation.csv",
               'a' if existing_report else 'w') as output:
-        for student in performance:
+        for student in records:
             output.write(student)
             output.write('\n')
