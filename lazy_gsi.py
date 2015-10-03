@@ -6,10 +6,18 @@
 
 # Lazy GSI and his sloppy grader
 
+# hw?: assignments downloaded from ctools
+# hw?_sol: solutions
+# suppl: datasets, modules
+# unknown_format: found compressed file but can't uncompressed it
+# test_sciprts: scripts to be graded
+# output
+
+from copy import deepcopy
 from numpy import median
-from os import listdir, remove, walk
-from os.path import isdir
-from shutil import copy, rmtree
+from os import listdir, makedirs, remove, walk
+from os.path import isdir, isfile
+from shutil import copy
 from subprocess import Popen, PIPE
 from timeit import timeit
 import signal
@@ -20,7 +28,7 @@ import zipfile
 from sloppy_grader import sloppy_grader
 
 
-def file_checker(pathname, comments, tasks, modules):
+def file_checker(root, filename, comments, tasks, modules):
     """ Find scripts and move them to ./test_scripts/; check modules. """
 
     def module_check(comments, script, modules):
@@ -46,25 +54,33 @@ def file_checker(pathname, comments, tasks, modules):
         comments.extend(["banned_{0}".format(pkg) for pkg in pkgs
                          if pkg not in modules])
 
-    found_it = dict.fromkeys(tasks, False)
-    try:
-        with zipfile.ZipFile(pathname, 'r') as z:
-            z.extractall('tmp')
-        for p, _, files in walk('tmp'):
-            for file in files:
-                task = file[:-3]
-                if task in tasks:
-                    found_it[task] = True
-                    copy("{0}/{1}".format(p, file),
-                         "test_scripts/{0}".format(file))
-                    with open("test_scripts/{0}".format(file)) as script:
-                        module_check(comments, script, modules[task])
-        rmtree('tmp')
-    except:
-        print "Can't uncompress {0}. Unknown format.".format(pathname)
-        copy(pathname, 'unknown/{0}'.format(pathname.split('/')[-1]))    
-        comments.append('unknown_format')
+    found = False
+    for path, _, files in walk(root):
+        for file in files:
+            if file == filename:
+                pathname = "{0}/{1}".format(path, file)
+                try:
+                    with zipfile.ZipFile(pathname, 'r') as z:
+                        z.extractall(root)
+                    found = True
+                    break
+                except:
+                    print "Can't uncompress {0}.".format(file)
+                    copy(pathname, 'unknown_format')
+                    comments.append('unknown_format')
+        if found:
+            break
 
+    found_it = dict.fromkeys(tasks, False)
+    for path, _, files in walk(root):
+        for file in files:
+            task = file[:-3]
+            if task in tasks:
+                found_it[task] = True
+                copy("{0}/{1}".format(path, file),
+                     "test_scripts/{0}".format(file))
+                with open("test_scripts/{0}".format(file)) as script:
+                    module_check(comments, script, modules[task])
     return found_it
 
 
@@ -130,7 +146,7 @@ def line_counter(path, found_it, sol=False):
                 counter(script, nlines)
         else:
             for method in scores[task]:
-                nlines[method] = 65535
+                nlines[method] = float('inf')
     return nlines
 
 
@@ -150,7 +166,8 @@ def timer(filename, uniquename, task, n_rep):
     @timeout
     def subtimer(script):
         try:
-            return timeit(script, number=1, setup='from subprocess import call; import os')
+            return timeit(script, number=1,
+                          setup='from subprocess import call; import os')
         except:
             return float('inf')
 
@@ -196,10 +213,15 @@ if __name__ == '__main__':
     line_sol = line_counter('hw1_sol', dict.fromkeys(tasks, True), True)
     performance = [', '.join(('uniquename, time_1, time_2, time_3',
                               'pep8_1, pep8_2, pep8_3',
-                              ', '.join(methods), 'comments'))]
+                              ', '.join(methods), 'pdf', 'comments'))]
     evaluated = set()
+    for folder in ['output', 'unknown_format', 'test_scripts']:
+        if not isdir(folder):
+            makedirs(folder)
+
+    # Skip assignments who have got graded
     try:
-        with open('evaluation.csv') as students:
+        with open('output/evaluation.csv') as students:
             students.readline()
             for student in students:
                 evaluated.add(student.split(',')[0])
@@ -209,26 +231,31 @@ if __name__ == '__main__':
     for s in suppl:
         copy("suppl/hw1/{0}".format(s), './')
 
-    for raw in (i for i in listdir('hw1') if i.endswith('.zip')):
-        uniquename = raw.split('_.')[-1].split('.')[0]
-        
+    for folder in listdir('hw1'):
+        match = re.search('\((.*)\)', folder)
+        if match:
+            uniquename = match.group(1)
+        else:
+            continue
+
         if uniquename in evaluated:
             print "Found {0} in evaluation.csv".format(uniquename)
             continue
 
         print "{1} Grading: {0} {1}".format(uniquename, '=' * 30)
-        pathname = "hw1/{0}".format(raw)
         comments = []
 
         # Prepare files
         for s in suppl:
             copy("suppl/hw1/{0}".format(s), './test_scripts/')
 
-        found_it = file_checker(pathname, comments, tasks, modules)
+        filename = 'assignment_one_{0}.zip'.format(uniquename)
+        root = 'hw1/{0}'.format(folder)
+        found_it = file_checker(root, filename, comments, tasks, modules)
 
         # Check #lines
         for method, k in line_counter('test_scripts', found_it).items():
-            if abs(line_sol[method] - k) > 2:
+            if float('inf') > abs(line_sol[method] - k) > 2:
                 comments.append('#line_{0}'.format(method))
 
         # Variables for storing results
@@ -271,14 +298,15 @@ if __name__ == '__main__':
                                       ', '.join(map(str, pep8_passed)),
                                       ', '.join(map(str, [results[m]
                                                           for m in methods])),
-                                      ';'.join(comments))))
+                                      '0', ';'.join(comments))))
         print performance[-1]
 
     # Final cleanups
     for s in suppl:
         remove("{0}".format(s))
-
-    with open("evaluation.csv", "w") as output:
+    existing_report = isfile('output/evaluation.csv')
+    with open("output/evaluation.csv",
+              'a' if existing_report else 'w') as output:
         for student in performance:
             output.write(student)
             output.write('\n')
