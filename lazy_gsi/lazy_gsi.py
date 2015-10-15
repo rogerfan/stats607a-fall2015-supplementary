@@ -155,6 +155,47 @@ def line_counter(path, found_it, sol=False):
                 nlines[method] = float('inf')
     return nlines
 
+def eavesdropper(path, found_it, sol=False):
+    """ There must be something wrong if you wrote terribly long codes. """
+
+    def setup_intercepts(script, targets):
+        method = None
+        for line in script:
+            if line[:4] == 'def ':
+                match = re.search('def (.*)\(', line)
+                if match and match.group(1) in scores[task]:
+                    method = (match.group(1) if match.group(1) in targets[task]
+                              else None)
+                elif line[0] not in ['\s', '\t']:
+                    method = None
+
+            if method:
+                # Remove Documents
+                s = len(re.findall('"""', line))
+                if line.lstrip()[:3] == '"""':
+                    if s % 2:
+                        in_string = not in_string
+                if in_string:
+                    in_string = len(re.findall('"""', line)) % 2 == 1
+
+                # Remove blank lines and comments
+                if not in_string and line[:11] == '    return ':
+                    line += ', ' + targets[method]
+
+    nlines = {}
+    for i, task in enumerate(tasks):
+        filename = '{0}/{1}{2}.py'.format(path, task, '_sol' if sol else '')
+        for method in scores[task]:
+            nlines[method] = 0
+        method = None
+        if found_it[task]:
+            with open(filename, 'r') as script:
+                counter(script, nlines)
+        else:
+            for method in scores[task]:
+                nlines[method] = float('inf')
+    return nlines
+
 
 def pep8_report(report, exceptions):
     """ Do pep8 check but ignore excpetions. """
