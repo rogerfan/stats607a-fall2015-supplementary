@@ -388,7 +388,7 @@ def lazy_GSI(topics, suppl, tasks, modules_list):
         # PEP8 check
         for s in submissions:
             filename = "{0}.py".format(s)
-            pep8_pass = pep8_checker(filename, [])
+            pep8_pass = pep8_checker("test_scripts/" + filename)
             if pep8_pass:
                 evaluation[2] += 1
             comments.append("{0} pep8_check +{1}".format(filename.split('_')[2][:-3],
